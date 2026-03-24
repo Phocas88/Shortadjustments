@@ -365,24 +365,24 @@
 </div>
 
 <div class="info-box">
-  <strong>What gets flagged:</strong> Bins marked with X, ×2, "not in location", crossed out, or highlighted as missing stock are extracted. The <strong>Avail</strong> quantity becomes the negative adjustment in column G.
+  <strong>What gets flagged:</strong> Bins marked with X, ×2, "not in location", crossed out, or highlighted as missing stock are extracted. The <strong>Avail</strong> quantity becomes the negative adjustment in column G. Supports JPG, PNG, and <strong>PDF</strong> files.
 </div>
 
 <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
   <div class="upload-icon">📄</div>
-  <div class="upload-label">Drop replenishment sheet photos here</div>
-  <div class="upload-sub">or click to browse · JPG, PNG supported · multiple files OK</div>
-  <input type="file" id="fileInput" accept="image/*" multiple onchange="handleFiles(this.files)">
+  <div class="upload-label">Drop replenishment sheet photos or PDFs here</div>
+  <div class="upload-sub">or click to browse · JPG, PNG, PDF supported · multiple files OK</div>
+  <input type="file" id="fileInput" accept="image/*,.pdf,application/pdf" multiple onchange="handleFiles(this.files)">
 </div>
 
 <div class="preview-grid" id="previewGrid"></div>
 
 <button class="scan-btn" id="scanBtn" onclick="scanImages()" disabled>
-  ⬡ SCAN IMAGES FOR FLAGGED BINS
+  ⬡ SCAN FILES FOR FLAGGED BINS
 </button>
 
 <div class="status-bar" id="statusBar">
-  <span>Ready — upload images to begin</span>
+  <span>Ready — upload images or PDFs to begin</span>
 </div>
 
 <div id="resultsSection" style="display:none">
@@ -433,10 +433,12 @@ dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.
 
 function handleFiles(files) {
   Array.from(files).forEach(f => {
-    if (!f.type.startsWith('image/')) return;
+    const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+    const isImage = f.type.startsWith('image/');
+    if (!isPdf && !isImage) return;
     const reader = new FileReader();
     reader.onload = e => {
-      images.push({ file: f, dataUrl: e.target.result });
+      images.push({ file: f, dataUrl: e.target.result, isPdf });
       renderPreviews();
     };
     reader.readAsDataURL(f);
@@ -449,7 +451,11 @@ function renderPreviews() {
   images.forEach((img, i) => {
     const div = document.createElement('div');
     div.className = 'preview-thumb';
-    div.innerHTML = `<img src="${img.dataUrl}"><button class="remove-btn" onclick="removeImage(${i})">×</button>`;
+    if (img.isPdf) {
+      div.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1a1f26;font-size:9px;color:#6b7280;font-family:IBM Plex Mono,monospace;gap:4px"><span style="font-size:22px">📑</span><span>PDF</span><span style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${img.file.name}</span></div><button class="remove-btn" onclick="removeImage(${i})">×</button>`;
+    } else {
+      div.innerHTML = `<img src="${img.dataUrl}"><button class="remove-btn" onclick="removeImage(${i})">×</button>`;
+    }
     grid.appendChild(div);
   });
   document.getElementById('scanBtn').disabled = images.length === 0;
@@ -470,7 +476,7 @@ function setStatus(msg, loading = false) {
 async function scanImages() {
   if (images.length === 0) return;
   document.getElementById('scanBtn').disabled = true;
-  setStatus(`Scanning ${images.length} image(s) with Claude Vision...`, true);
+  setStatus(`Scanning ${images.length} file(s) with Claude Vision...`, true);
 
   const prompt = `You are analyzing warehouse replenishment sheet photos. Extract every bin line that is FLAGGED as missing/short stock.
 
@@ -502,8 +508,12 @@ If no flagged bins found, return: []`;
     const content = [];
     for (const img of images) {
       const base64 = img.dataUrl.split(',')[1];
-      const mtype = img.file.type;
-      content.push({ type: 'image', source: { type: 'base64', media_type: mtype, data: base64 } });
+      if (img.isPdf) {
+        content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } });
+      } else {
+        const mtype = img.file.type;
+        content.push({ type: 'image', source: { type: 'base64', media_type: mtype, data: base64 } });
+      }
     }
     content.push({ type: 'text', text: prompt });
 
@@ -540,7 +550,7 @@ If no flagged bins found, return: []`;
     }));
 
     renderTable();
-    setStatus(`✓ Found ${rows.length} flagged bin(s) across ${images.length} image(s)`);
+    setStatus(`✓ Found ${rows.length} flagged bin(s) across ${images.length} file(s)`);
     document.getElementById('resultsSection').style.display = 'block';
 
   } catch (err) {
